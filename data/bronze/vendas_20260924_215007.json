@@ -1,0 +1,14 @@
+[
+    {
+        "user_id": 101,
+        "product": "  teclado mecanico rgb  ",
+        "amount": 250.0,
+        "transaction_date": "2026-09-24T17:30:00"
+    },
+    {
+        "user_id": 102,
+        "product": "mouse gamer sem fio ",
+        "amount": 120.5,
+        "transaction_date": "2026-09-24T17:35:00"
+    }
+]
