@@ -32,6 +32,7 @@ O pipeline processa transações brutas via endpoints RESTful e aplica as etapas
 ---
 
 ## 📁 Estrutura do Repositório
+````
 .
 ├── app/
 │   ├── main.py            # Endpoints FastAPI e rotas do pipeline
@@ -46,8 +47,7 @@ O pipeline processa transações brutas via endpoints RESTful e aplica as etapas
 ├── Dockerfile             # Containerização da aplicação Python
 ├── requirements.txt       # Dependências do projeto
 └── README.md              # Documentação técnica
-
-
+````
 
 ---
 
@@ -71,7 +71,6 @@ cd ecommerce-etl-api
 2. **Subir os containers da aplicação e banco de dados:**
 ```
 docker-compose up -d --build
-
 ```
 
 
@@ -79,7 +78,6 @@ docker-compose up -d --build
 Abra o navegador e acesse:
 * **Swagger UI:** `http://localhost:8000/docs`
 * **ReDoc:** `http://localhost:8000/redoc`
-
 
 
 ---
@@ -101,7 +99,6 @@ Comandos para consultar os dados inseridos diretamente no container do PostgreSQ
 docker exec -it postgres_db psql -U user_admin -d db_ecommerce -c "SELECT * FROM silver_processed_data LIMIT 10;"
 
 ```
-
 
 * **Consultar dados agregados (Camada Gold):**
 ```
