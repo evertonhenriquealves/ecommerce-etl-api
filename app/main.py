@@ -1,37 +1,46 @@
-from fastapi import FastAPI, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from fastapi import FastAPI, HTTPException, status
 from app.schemas import IngestionPayload
-from app.database import SessionLocal
 from app.etl import run_etl_pipeline
+from app.database import SessionLocal, GoldUserMetricsModel
 
 app = FastAPI(
     title="E-Commerce ETL Pipeline API",
-    description="API para ingestão de dados brutos, transformação em tempo real e carga no Data Lake e PostgreSQL.",
-    version="1.0.0"
+    description="API com Arquitetura Medalhão (Bronze, Silver e Gold) via FastAPI, Pandas e PostgreSQL."
 )
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-@app.post("/api/v1/ingest", status_code=status.HTTP_201_CREATED)
-def ingest_data(payload: IngestionPayload, db: Session = Depends(get_db)):
-    try:
-        processed_count = run_etl_pipeline(payload.records, db)
-        return {
-            "status": "success",
-            "message": f"Pipeline executado com sucesso. {processed_count} registos processados.",
-            "processed_records": processed_count
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro no processamento ETL: {str(e)}"
-        )
 
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
+
+@app.post("/api/v1/ingest", status_code=status.HTTP_201_CREATED)
+def ingest_data(payload: IngestionPayload):
+    try:
+        raw_data = [record.model_dump() for record in payload.records]
+        records_processed = run_etl_pipeline(raw_data)
+        return {
+            "status": "success",
+            "processed_records": records_processed
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Erro no processamento do pipeline ETL: {str(e)}"
+        )
+
+# --- NOVO ENDPOINT: CONSULTA DA CAMADA GOLD ---
+@app.get("/api/v1/metrics/users")
+def get_user_metrics():
+    db = SessionLocal()
+    try:
+        metrics = db.query(GoldUserMetricsModel).all()
+        return [
+            {
+                "user_id": m.user_id,
+                "total_spent": round(m.total_spent, 2),
+                "total_orders": m.total_orders,
+                "last_transaction_date": m.last_transaction_date
+            }
+            for m in metrics
+        ]
+    finally:
+        db.close()
