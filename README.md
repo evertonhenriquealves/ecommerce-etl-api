@@ -6,7 +6,9 @@
 ![Docker](https://img.shields.io/badge/Docker-Enabled-blue?style=flat-square&logo=docker)
 ![Pandas](https://img.shields.io/badge/Pandas-Data%20Processing-150458?style=flat-square&logo=pandas)
 
-Uma API de alta performance para ingestão, transformação e carga de dados de e-commerce utilizando a **Medallion Architecture** (Bronze, Silver e Gold) em ambiente containerizado com Docker.
+🇬🇧 A high-performance REST API for e-commerce data ingestion, transformation, and loading using Medallion Architecture (Bronze, Silver, and Gold layers) in a Dockerized environment.
+
+🇧🇷 Uma API de alta performance para ingestão, transformação e carga de dados de e-commerce utilizando a Arquitetura Medalhão (camadas Bronze, Prata e Ouro) em ambiente containerizado com Docker.
 
 ---
 
