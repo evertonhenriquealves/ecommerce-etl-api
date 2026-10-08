@@ -1,21 +1,29 @@
 import json
 import os
 from datetime import datetime
+
 import pandas as pd
+from sqlalchemy import func
+from sqlalchemy.dialects.postgresql import insert
+
 from app.database import SessionLocal, SilverDataModel, GoldUserMetricsModel
 
 
-def run_etl_pipeline(raw_records: list):
+def run_etl_pipeline(raw_records: list) -> dict:
+    received = len(raw_records)
+    if received == 0:
+        return {"received": 0, "inserted": 0, "ignored": 0}
+
     # ------------------------------------------------------------------
     # 1. EXTRACT / INGESTION (Camada Bronze)
+    # Guarda o lote exatamente como foi recebido, mesmo que tenha repetidos.
     # ------------------------------------------------------------------
     os.makedirs("data/bronze", exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     bronze_path = f"data/bronze/vendas_{timestamp}.json"
-    
+
     with open(bronze_path, "w", encoding="utf-8") as f:
         json.dump(raw_records, f, indent=4, default=str)
-
 
     # ------------------------------------------------------------------
     # 2. TRANSFORM (Tratamento para Camada Silver)
@@ -24,70 +32,98 @@ def run_etl_pipeline(raw_records: list):
     df["product_clean"] = df["product"].astype(str).str.strip().str.upper()
     df["transaction_date"] = pd.to_datetime(df["transaction_date"])
 
-
-    # ------------------------------------------------------------------
-    # 3. LOAD SILVER (Data Lake Parquet & PostgreSQL)
-    # ------------------------------------------------------------------
-    os.makedirs("data/silver", exist_ok=True)
-    silver_path = f"data/silver/vendas_limpas_{timestamp}.parquet"
-    df.to_parquet(silver_path, index=False)
+    # Se a mesma venda aparecer duas vezes no mesmo lote, fica só a primeira
+    df = df.drop_duplicates(subset="transaction_id", keep="first")
 
     db = SessionLocal()
     try:
-        # Gravação na Silver (SQL)
-        for _, row in df.iterrows():
-            db_record = SilverDataModel(
-                user_id=int(row["user_id"]),
-                product_clean=row["product_clean"],
-                amount=float(row["amount"]),
-                transaction_date=row["transaction_date"]
-            )
-            db.add(db_record)
-        db.commit()
-
-
         # --------------------------------------------------------------
-        # 4. TRANSFORM & LOAD GOLD (Agregação de Métricas por Usuário)
+        # 3. LOAD SILVER (PostgreSQL)
+        # Se o transaction_id já existe, o banco ignora a linha (sem erro).
+        # O RETURNING devolve só os ids que realmente foram inseridos.
         # --------------------------------------------------------------
-        # Agrupa os dados do lote por usuário
-        gold_df = df.groupby("user_id").agg(
-            total_spent=("amount", "sum"),
-            total_orders=("product_clean", "count"),
-            last_transaction_date=("transaction_date", "max")
-        ).reset_index()
+        silver_rows = [
+            {
+                "transaction_id": row["transaction_id"],
+                "user_id": int(row["user_id"]),
+                "product_clean": row["product_clean"],
+                "amount": float(row["amount"]),
+                "transaction_date": row["transaction_date"].to_pydatetime(),
+            }
+            for _, row in df.iterrows()
+        ]
 
-        # Salva em Parquet na Camada Gold
-        os.makedirs("data/gold", exist_ok=True)
-        gold_path = f"data/gold/metricas_usuario_{timestamp}.parquet"
-        gold_df.to_parquet(gold_path, index=False)
+        silver_stmt = (
+            insert(SilverDataModel)
+            .values(silver_rows)
+            .on_conflict_do_nothing(index_elements=["transaction_id"])
+            .returning(SilverDataModel.transaction_id)
+        )
+        inserted_ids = [r[0] for r in db.execute(silver_stmt).fetchall()]
 
-        # Gravação/Atualização na Gold (SQL - Lógica de Upsert)
-        for _, row in gold_df.iterrows():
-            uid = int(row["user_id"])
-            existing_user = db.query(GoldUserMetricsModel).filter_by(user_id=uid).first()
+        gold_df = pd.DataFrame()
 
-            if existing_user:
-                # Soma os novos valores aos totais acumulados
-                existing_user.total_spent += float(row["total_spent"])
-                existing_user.total_orders += int(row["total_orders"])
-                if row["last_transaction_date"] > existing_user.last_transaction_date:
-                    existing_user.last_transaction_date = row["last_transaction_date"]
-            else:
-                # Cria um novo registro para o usuário
-                new_gold_record = GoldUserMetricsModel(
-                    user_id=uid,
-                    total_spent=float(row["total_spent"]),
-                    total_orders=int(row["total_orders"]),
-                    last_transaction_date=row["last_transaction_date"]
+        if inserted_ids:
+            # ----------------------------------------------------------
+            # 4. GOLD: recalculada a partir da Silver (e não somada ao que já existia).
+            # Assim o total sempre bate com o que a Silver contém.
+            # ----------------------------------------------------------
+            affected_users = [int(u) for u in df[df["transaction_id"].isin(inserted_ids)]["user_id"].unique()]
+
+            aggregated = (
+                db.query(
+                    SilverDataModel.user_id.label("user_id"),
+                    func.sum(SilverDataModel.amount).label("total_spent"),
+                    func.count(SilverDataModel.id).label("total_orders"),
+                    func.max(SilverDataModel.transaction_date).label("last_transaction_date"),
                 )
-                db.add(new_gold_record)
+                .filter(SilverDataModel.user_id.in_(affected_users))
+                .group_by(SilverDataModel.user_id)
+                .all()
+            )
 
+            gold_rows = [
+                {
+                    "user_id": a.user_id,
+                    "total_spent": float(a.total_spent),
+                    "total_orders": int(a.total_orders),
+                    "last_transaction_date": a.last_transaction_date,
+                }
+                for a in aggregated
+            ]
+
+            gold_stmt = insert(GoldUserMetricsModel).values(gold_rows)
+            gold_stmt = gold_stmt.on_conflict_do_update(
+                index_elements=["user_id"],
+                set_={
+                    "total_spent": gold_stmt.excluded.total_spent,
+                    "total_orders": gold_stmt.excluded.total_orders,
+                    "last_transaction_date": gold_stmt.excluded.last_transaction_date,
+                },
+            )
+            db.execute(gold_stmt)
+            gold_df = pd.DataFrame(gold_rows)
+
+        # Silver e Gold são confirmadas juntas: se algo falhar, nada fica pela metade
         db.commit()
 
-    except Exception as e:
+    except Exception:
         db.rollback()
-        raise e
+        raise
     finally:
         db.close()
 
-    return len(df)
+    # ------------------------------------------------------------------
+    # 5. ARQUIVOS PARQUET (depois do commit, e só com o que foi novo)
+    # ------------------------------------------------------------------
+    if inserted_ids:
+        os.makedirs("data/silver", exist_ok=True)
+        df[df["transaction_id"].isin(inserted_ids)].to_parquet(
+            f"data/silver/vendas_limpas_{timestamp}.parquet", index=False
+        )
+
+        os.makedirs("data/gold", exist_ok=True)
+        gold_df.to_parquet(f"data/gold/metricas_usuario_{timestamp}.parquet", index=False)
+
+    inserted = len(inserted_ids)
+    return {"received": received, "inserted": inserted, "ignored": received - inserted}

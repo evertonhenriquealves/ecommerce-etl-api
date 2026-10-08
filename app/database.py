@@ -13,6 +13,7 @@ class SilverDataModel(Base):
     __tablename__ = "silver_processed_data"
 
     id = Column(Integer, primary_key=True, index=True)
+    transaction_id = Column(String, nullable=False, unique=True, index=True)
     user_id = Column(Integer, nullable=False)
     product_clean = Column(String, nullable=False)
     amount = Column(Float, nullable=False)

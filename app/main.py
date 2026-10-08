@@ -16,10 +16,10 @@ def health_check():
 def ingest_data(payload: IngestionPayload):
     try:
         raw_data = [record.model_dump() for record in payload.records]
-        records_processed = run_etl_pipeline(raw_data)
+        result = run_etl_pipeline(raw_data)
         return {
             "status": "success",
-            "processed_records": records_processed
+            **result
         }
     except Exception as e:
         raise HTTPException(
@@ -27,7 +27,7 @@ def ingest_data(payload: IngestionPayload):
             detail=f"Erro no processamento do pipeline ETL: {str(e)}"
         )
 
-# --- NOVO ENDPOINT: CONSULTA DA CAMADA GOLD ---
+# --- CONSULTA DA CAMADA GOLD ---
 @app.get("/api/v1/metrics/users")
 def get_user_metrics():
     db = SessionLocal()
