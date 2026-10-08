@@ -1,0 +1,37 @@
+[
+    {
+        "transaction_id": "T-0001",
+        "user_id": 101,
+        "product": "  teclado mecanico rgb  ",
+        "amount": 350.5,
+        "transaction_date": "2026-09-27 10:00:00"
+    },
+    {
+        "transaction_id": "T-0002",
+        "user_id": 101,
+        "product": "mousepad extra grande",
+        "amount": 89.9,
+        "transaction_date": "2026-09-27 10:15:00"
+    },
+    {
+        "transaction_id": "T-0003",
+        "user_id": 102,
+        "product": "MONITOR 144HZ 27 POL",
+        "amount": 1200.0,
+        "transaction_date": "2026-09-27 10:30:00"
+    },
+    {
+        "transaction_id": "T-0004",
+        "user_id": 103,
+        "product": "cadeira ergonomica mesh",
+        "amount": 950.0,
+        "transaction_date": "2026-09-27 10:45:00"
+    },
+    {
+        "transaction_id": "T-0005",
+        "user_id": 102,
+        "product": " cabo hdmi 2.1 2m ",
+        "amount": 45.0,
+        "transaction_date": "2026-09-27 11:00:00"
+    }
+]
