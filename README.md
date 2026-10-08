@@ -1,108 +1,150 @@
 # 🛒 E-Commerce ETL Pipeline API
 
-![Python](https://img.shields.io/badge/Python-3.10+-blue?style=flat-square&logo=python)
+![Python](https://img.shields.io/badge/Python-3.10-blue?style=flat-square&logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-Enabled-009688?style=flat-square&logo=fastapi)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-blue?style=flat-square&logo=postgresql)
 ![Docker](https://img.shields.io/badge/Docker-Enabled-blue?style=flat-square&logo=docker)
 ![Pandas](https://img.shields.io/badge/Pandas-Data%20Processing-150458?style=flat-square&logo=pandas)
 
-🇬🇧 A high-performance REST API for e-commerce data ingestion, transformation, and loading using Medallion Architecture (Bronze, Silver, and Gold layers) in a Dockerized environment.
+🇬🇧 A REST API for e-commerce data ingestion, transformation, and loading using Medallion Architecture (Bronze, Silver, and Gold layers) in a Dockerized environment.
 
-🇧🇷 Uma API de alta performance para ingestão, transformação e carga de dados de e-commerce utilizando a Arquitetura Medalhão (camadas Bronze, Prata e Ouro) em ambiente containerizado com Docker.
+🇧🇷 Uma API REST para ingestão, transformação e carga de dados de e-commerce utilizando a Arquitetura Medalhão (camadas Bronze, Prata e Ouro) em ambiente containerizado com Docker.
 
 ---
 
 ## 🏗️ Arquitetura do Projeto
 
-O pipeline processa transações brutas via endpoints RESTful e aplica as etapas de ETL organizadas em três camadas:
+Cada chamada ao endpoint de ingestão recebe um lote de transações, valida o formato com o Pydantic e executa o pipeline em três camadas:
 
-1. **Camada Bronze (Raw Ingestion):** Recebe o payload JSON bruto via API e persiste os dados em seu formato imutável e original na pasta local (`data/bronze/`).
-2. **Camada Silver (Cleaned & Structured):** Realiza a limpeza de texto (remoção de espaços e padronização em maiúsculas), faz a conversão de tipos de dados e persiste o resultado em formato colunar otimizado Parquet (`data/silver/`), além de carregar no banco **PostgreSQL** (`silver_processed_data`).
-3. **Camada Gold (Business Aggregations & Analytics):** Processa e consolida as métricas de negócios (como total de vendas por categoria, ticket médio e volume por cliente), gerando tabelas prontas para consumo analítico e BI (`data/gold/` e PostgreSQL).
+1. **Camada Bronze:** grava o lote recebido em JSON, sem nenhuma limpeza, em `data/bronze/vendas_<data_hora>.json`. Os dados já passaram pela validação de tipos da API, então a Bronze guarda o lote como foi aceito.
+2. **Camada Silver:** remove espaços e converte o nome do produto para maiúsculas (coluna `product_clean`) e converte a data para `datetime`. O resultado é gravado em Parquet (`data/silver/vendas_limpas_<data_hora>.parquet`) e inserido na tabela `silver_processed_data` do PostgreSQL.
+3. **Camada Gold:** agrega o lote por usuário (`total_spent`, `total_orders` e `last_transaction_date`). O lote agregado é gravado em Parquet (`data/gold/metricas_usuario_<data_hora>.parquet`), e os totais são somados aos já existentes na tabela `gold_user_metrics` do PostgreSQL.
+
+```text
+POST /api/v1/ingest
+        │
+        ▼
+[ Validação Pydantic ] ──► [ Bronze: JSON ]
+                                  │
+                                  ▼
+                       [ Silver: limpeza + Parquet + PostgreSQL ]
+                                  │
+                                  ▼
+                       [ Gold: agregação por usuário + Parquet + PostgreSQL ]
+```
 
 ---
 
 ## 🛠️ Tecnologias Utilizadas
 
 * **Linguagem:** Python 3.10
-* **Framework Web:** FastAPI & Uvicorn
-* **Manipulação de Dados:** Pandas & PyArrow (Parquet)
-* **Banco de Dados:** PostgreSQL & SQLAlchemy ORM
-* **Validação de Schemas:** Pydantic
-* **Infraestrutura:** Docker & Docker Compose
+* **API:** FastAPI e Uvicorn
+* **Manipulação de dados:** Pandas e PyArrow (Parquet)
+* **Banco de dados:** PostgreSQL 15 e SQLAlchemy
+* **Validação:** Pydantic v2
+* **Infraestrutura:** Docker e Docker Compose
 
 ---
 
 ## 📁 Estrutura do Repositório
-````
+
+```text
 .
 ├── app/
-│   ├── main.py            # Endpoints FastAPI e rotas do pipeline
-│   ├── database.py        # Conexão e sessão do PostgreSQL
-│   ├── models.py          # Modelos SQLAlchemy (Tabelas do Banco)
-│   └── schemas.py         # Schemas de validação Pydantic
+│   ├── __init__.py
+│   ├── main.py            # Rotas da API (FastAPI)
+│   ├── etl.py             # Pipeline Bronze, Silver e Gold
+│   ├── database.py        # Conexão com o PostgreSQL e modelos das tabelas
+│   └── schemas.py         # Esquemas de validação (Pydantic)
 ├── data/
-│   ├── bronze/            # Ingestão bruta (JSON)
-│   ├── silver/            # Dados limpos e padronizados (Parquet)
-│   └── gold/              # Dados agregados para analytics (Parquet)
-├── docker-compose.yml     # Orquestração do PostgreSQL e FastAPI
-├── Dockerfile             # Containerização da aplicação Python
-├── requirements.txt       # Dependências do projeto
-└── README.md              # Documentação técnica
-````
+│   ├── bronze/            # Lotes recebidos (JSON)
+│   ├── silver/            # Dados limpos (Parquet)
+│   └── gold/              # Métricas por usuário de cada lote (Parquet)
+├── docker-compose.yml     # PostgreSQL e API
+├── Dockerfile             # Imagem da aplicação
+├── requirements.txt
+└── README.md
+```
 
 ---
 
-## 🚀 Setup & Execution
+## 🚀 Como Executar
 
-### Pré-requisitos
+**Pré-requisitos:** Docker Desktop em execução e Git instalado.
 
-* Docker Desktop instalado e em execução.
-* Git instalado.
+1. Clone o repositório:
 
-### Passo a Passo
-
-1. **Clonar o repositório:**
-```
-git clone [https://github.com/evertonhenriquealves/ecommerce-etl-api.git](https://github.com/evertonhenriquealves/ecommerce-etl-api.git)
+```bash
+git clone https://github.com/evertonhenriquealves/ecommerce-etl-api.git
 cd ecommerce-etl-api
-
 ```
 
+2. Suba os containers (a primeira vez demora mais, porque a imagem é construída):
 
-2. **Subir os containers da aplicação e banco de dados:**
-```
+```bash
 docker-compose up -d --build
 ```
 
+3. Abra a documentação interativa (Swagger), onde é possível testar as rotas:
 
-3. **Acessar a documentação interativa da API:**
-Abra o navegador e acesse:
-* **Swagger UI:** `http://localhost:8000/docs`
-* **ReDoc:** `http://localhost:8000/redoc`
+* Swagger UI: http://localhost:8000/docs
+* ReDoc: http://localhost:8000/redoc
 
-
----
-
-## 🔌 Endpoints da API
-
-* `POST /ingest` — Ingestão de novas transações (Gera arquivo Bronze, processa Silver e consolida Gold).
-* `GET /data/silver` — Retorna os registros limpos da camada Silver.
-* `GET /analytics/gold` — Retorna as métricas agregadas de negócios da camada Gold.
+> As credenciais do banco (`etl_user` / `etl_password`) estão no `docker-compose.yml` e servem apenas para uso local e de estudo.
 
 ---
 
-## 🔍 Consultas Rápidas no PostgreSQL
+## 🔌 Endpoints
 
-Comandos para consultar os dados inseridos diretamente no container do PostgreSQL:
+| Método | Rota | Descrição |
+| --- | --- | --- |
+| `GET` | `/health` | Verifica se a API está no ar |
+| `POST` | `/api/v1/ingest` | Recebe um lote de transações e executa o pipeline (Bronze, Silver e Gold) |
+| `GET` | `/api/v1/metrics/users` | Retorna as métricas acumuladas por usuário (camada Gold) |
 
-* **Consultar registros limpos (Camada Silver):**
-```
-docker exec -it postgres_db psql -U user_admin -d db_ecommerce -c "SELECT * FROM silver_processed_data LIMIT 10;"
+**Exemplo de corpo para o `POST /api/v1/ingest`:**
 
+```json
+{
+  "records": [
+    {
+      "user_id": 101,
+      "product": "  teclado mecanico rgb  ",
+      "amount": 350.5,
+      "transaction_date": "2026-09-27T10:00:00"
+    },
+    {
+      "user_id": 102,
+      "product": "cabo hdmi 2.1 2m",
+      "amount": 45.0,
+      "transaction_date": "2026-09-27T11:00:00"
+    }
+  ]
+}
 ```
 
-* **Consultar dados agregados (Camada Gold):**
+Resposta esperada: `{"status": "success", "processed_records": 2}`. O campo `amount` deve ser maior que zero.
+
+---
+
+## 🔍 Consultas no PostgreSQL
+
+Com os containers em execução, na pasta do projeto:
+
+Inspeção de Amostra e Validação de Esquema — Camada Silver:
+```bash
+docker-compose exec db psql -U etl_user -d etl_db -c "SELECT * FROM silver_processed_data LIMIT 10;"
 ```
-docker exec -it postgres_db psql -U user_admin -d db_ecommerce -c "SELECT * FROM gold_aggregated_analytics;"
+
+Validação de Métricas Agregadas e Regras de Negócio — Camada Gold:
+```bash
+docker-compose exec db psql -U etl_user -d etl_db -c "SELECT user_id, total_spent, total_orders FROM gold_user_metrics;"
 ```
+
+---
+
+### 📝 Note
+
+🇬🇧 This is a study project. The data is synthetic, created to test the pipeline.
+
+🇧🇷 Projeto de estudo. Os dados são sintéticos, criados para testar o pipeline.
